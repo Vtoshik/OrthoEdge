@@ -8,3 +8,6 @@ data/certs
 *.md
 *.pdf
 !README.md
+
+# unrelated folder that appeared inside the project (submission files, another repo)
+/hackaton/
