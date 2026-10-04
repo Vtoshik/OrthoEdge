@@ -28,10 +28,11 @@ npm run check        # 63 unit/integration tests, then the full flow in a real b
 ## 2. Click through it yourself
 ```bash
 npm install
-npm run cert         # local HTTPS certificate (mkcert if installed, otherwise self-signed)
 npm run demo         # builds, loads 3 synthetic patients, starts the server (prints the addresses)
 ```
-1. Open the **doctor portal**: `https://localhost:8443/portal/` (accept the browser's certificate warning). Demo PIN **1234**.
+On a laptop nothing else is needed: without a certificate the server uses plain `http://localhost:8443`, which browsers still treat as a secure context, so the app and the signing key work (the sensor is simulated). A **phone** needs HTTPS, so run `npm run cert` first (see section 3) and use the `https://` addresses instead.
+
+1. Open the **doctor portal**: `http://localhost:8443/portal/` (or `https://localhost:8443/portal/` if you ran `npm run cert`; accept the browser's certificate warning). Demo PIN **1234**.
 2. The list is sorted by exception: **Ewa** has a red flag, **Marek** may be ready for a stage review, **Jan** is on plan.
 3. Open **Jan**, then *Edit protocol … and invite patient* → *Invite patient*. Open the setup link in another tab (or scan the QR with a phone) and press *Set up*.
 4. In the patient app press *Start today's session*. On a laptop the sensor is simulated (a slider); the angle code is the real one. Pick lying or sitting, measure bend then straighten, tap a pain level, *Finish Session*. A normal day sends nothing alarming.
@@ -42,7 +43,7 @@ npm run demo         # builds, loads 3 synthetic patients, starts the server (pr
 `npm run demo` resets all data every time, so phones must be set up again with a new link.
 
 ## 3. On a real phone
-Use the **same Wi-Fi** (a phone hotspot works; nothing needs the internet). Run `npm run cert` after joining the network, then `npm run demo`; the server prints the addresses. Open the portal at the **IP address** (`https://<IP>:8443/portal/`, not `localhost`) so the setup QR works on the phone. Accept the certificate warning on the phone, scan the QR, press *Set up*, turn **off** *Demo tools → Simulate sensor*, and measure. Motion sensors and the signing key need HTTPS.
+Use the **same Wi-Fi** (a phone hotspot works; nothing needs the internet). Run `npm run cert` after joining the network (it creates a local certificate for the laptop's current address; install `mkcert` first to avoid the browser warning), then `npm run demo`; the server prints the addresses. Open the portal at the **IP address** (`https://<IP>:8443/portal/`, not `localhost`) so the setup QR works on the phone. Accept the certificate warning on the phone, scan the QR, press *Set up*, turn **off** *Demo tools → Simulate sensor*, and measure. Motion sensors and the signing key need HTTPS.
 
 ## What to look at (security and privacy by design)
 | Mechanism | Where | Covered by |
