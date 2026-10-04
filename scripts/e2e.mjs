@@ -1,7 +1,25 @@
+// End-to-end check of the whole demo in a real browser: enrol, measure, alert, tamper, replay, offline queue, stage advance.
+// Run: npm run e2e   (starts its own isolated server on port 9443 with throw-away data, then stops it)
+// Optional: BASE=https://host:port to test an already running server, CHROME_PATH=/path/to/chrome-or-chromium.
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { chromium } from 'playwright-core';
-const B = process.env.BASE ?? 'https://localhost:8443';
+
+let server, B = process.env.BASE;
+if (!B) {
+  const port = 9443;
+  server = spawn('node_modules/.bin/tsx', ['server/src/main.ts'], { env: { ...process.env, PORT: String(port), DATA_DIR: mkdtempSync(join(tmpdir(), 'kneetrack-e2e-')), DEMO_ALLOW_ANY_DATE: '1', HTTP: '1' }, detached: true, stdio: 'ignore' });
+  server.unref(); B = `http://localhost:${port}`;
+  for (let i = 0; i < 60; i++) { try { if ((await fetch(B + '/api/health')).ok) break; } catch { /* not up yet */ } await new Promise((r) => setTimeout(r, 500)); }
+}
+const stop = () => { if (server?.pid) try { process.kill(-server.pid); } catch { /* already gone */ } };
+process.on('exit', stop); process.on('SIGINT', () => process.exit(1));
+const chrome = process.env.CHROME_PATH ?? ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find(existsSync);
+if (!chrome) throw new Error('No Chrome/Chromium found. Install one or set CHROME_PATH=/path/to/chrome');
 const tok = (await (await fetch(B + '/api/portal/enroll-token', { method: 'POST', headers: { 'content-type': 'application/json', 'x-portal-pin': '1234' }, body: JSON.stringify({ pseudonym: 'P-7F3A' }) })).json()).token;
-const br = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
+const br = await chromium.launch({ executablePath: chrome, args: ['--no-sandbox'] });
 const ctx = await br.newContext({ ignoreHTTPSErrors: true, viewport: { width: 400, height: 800 } });
 const pg = await ctx.newPage(); pg.on('pageerror', (e) => console.log('PAGEERR', e.message));
 const reading = async () => { await pg.getByRole('button', { name: 'Start' }).click(); await pg.getByText('Got it').waitFor({ timeout: 12000 }); await pg.waitForTimeout(600); };
@@ -60,3 +78,4 @@ await adv.click();
 await portal.locator('.lead').getByText(/Stage 2 · building range/).waitFor({ timeout: 8000 });
 console.log('clinician advanced Stage 1 → 2 ✔; milestone flag gone:', (await portal.getByText(/May be ready for review/).count()) === 0);
 await br.close();
+console.log('\nEND-TO-END: all checks passed');

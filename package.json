@@ -14,7 +14,8 @@
     "cert": "scripts/make-cert.sh",
     "demo": "npm run build && DEMO_ALLOW_ANY_DATE=1 tsx server/src/main.ts --reseed",
     "start": "tsx server/src/main.ts",
-    "e2e": "NODE_TLS_REJECT_UNAUTHORIZED=0 node scripts/e2e.mjs"
+    "e2e": "npm run build && node scripts/e2e.mjs",
+    "check": "vitest run && npm run e2e"
   },
   "devDependencies": {
     "playwright-core": "^1.63.0",

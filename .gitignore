@@ -7,3 +7,4 @@ data/certs
 # documentation and notes stay local
 *.md
 *.pdf
+!README.md
