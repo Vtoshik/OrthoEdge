@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { evaluate, missedDays, weekOf } from '../src/rules';
 import { isMilestoneReached, phaseInfo } from '../src/types';
 import type { DailySummary, Protocol } from '../src/types';
 
-const p: Protocol = JSON.parse(readFileSync(new URL('../../../config/protocol.calgary-sample.json', import.meta.url), 'utf8'));
+// Fixed fixture: these tests check the RULES, so they must not depend on the sample protocol's numbers.
+const p: Protocol = {
+  id: 'fixture', label: 'test fixture', surgeryDate: '2026-09-19', tolerance: { flexionDeg: 8.5, extensionDeg: 6.5 }, painLimit: 6, consecutiveDaysBelow: 3, trendMarginFraction: 0.5,
+  stages: [{ fromWeek: 1, flexionTargetDeg: 60, extensionTargetDeg: 5 }, { fromWeek: 2, flexionTargetDeg: 75, extensionTargetDeg: 3 }, { fromWeek: 3, flexionTargetDeg: 90, extensionTargetDeg: 0 }, { fromWeek: 5, flexionTargetDeg: 105, extensionTargetDeg: 0 }],
+  currentPhase: 1,
+  phases: [
+    { name: 'Stage 1 · early motion', exit: { flexionDeg: 90, extensionDeg: 0 }, clinicianChecks: ['No quadriceps lag', 'Swelling under control'] },
+    { name: 'Stage 2 · building range', exit: { flexionDeg: 120, extensionDeg: 0 }, clinicianChecks: ['Strength adequate', 'Normal gait', 'Swelling under control'] },
+    { name: 'Stage 3 · return to activity', clinicianChecks: [] },
+  ],
+};
 // surgery 2026-09-19: week 3 = 2026-10-03..09 ; week 2 = 09-26..10-02
 const d = (date: string, flexion: number, extension: number, pain = 2): DailySummary => ({ date, flexion, extension, pain });
 

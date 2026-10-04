@@ -1,6 +1,6 @@
 {
   "id": "calgary-sample",
-  "label": "SAMPLE protocol (illustrative targets adapted from Calgary ACL protocol criteria; clinician-set in real use)",
+  "label": "SAMPLE protocol (illustrative). Weekly pace follows the published mean recovery after ACL reconstruction (see server/src/synthetic.ts); stage criteria follow the Calgary protocol; clinician-set in real use",
   "surgeryDate": "2026-09-19",
   "operatedLeg": "right",
   "tolerance": {
@@ -14,22 +14,37 @@
   "stages": [
     {
       "fromWeek": 1,
-      "flexionTargetDeg": 60,
-      "extensionTargetDeg": 5
+      "flexionTargetDeg": 55,
+      "extensionTargetDeg": 4
     },
     {
       "fromWeek": 2,
-      "flexionTargetDeg": 75,
+      "flexionTargetDeg": 65,
       "extensionTargetDeg": 3
     },
     {
       "fromWeek": 3,
-      "flexionTargetDeg": 90,
+      "flexionTargetDeg": 78,
+      "extensionTargetDeg": 1
+    },
+    {
+      "fromWeek": 4,
+      "flexionTargetDeg": 88,
       "extensionTargetDeg": 0
     },
     {
-      "fromWeek": 5,
-      "flexionTargetDeg": 105,
+      "fromWeek": 6,
+      "flexionTargetDeg": 108,
+      "extensionTargetDeg": 0
+    },
+    {
+      "fromWeek": 8,
+      "flexionTargetDeg": 120,
+      "extensionTargetDeg": 0
+    },
+    {
+      "fromWeek": 12,
+      "flexionTargetDeg": 130,
       "extensionTargetDeg": 0
     }
   ],
@@ -39,7 +54,7 @@
       "name": "Stage 1 · early motion",
       "exit": {
         "flexionDeg": 90,
-        "extensionDeg": 0
+        "extensionDeg": 3
       },
       "clinicianChecks": [
         "No quadriceps lag",
@@ -50,7 +65,7 @@
       "name": "Stage 2 · building range",
       "exit": {
         "flexionDeg": 120,
-        "extensionDeg": 0
+        "extensionDeg": 3
       },
       "clinicianChecks": [
         "Strength adequate",

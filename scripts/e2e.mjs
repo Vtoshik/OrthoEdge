@@ -19,7 +19,7 @@ const session = async (label, { sameBend = false } = {}) => {
   await pg.getByRole('heading', { name: /hurt/ }).waitFor({ timeout: 8000 });
   await pg.locator('.pbtn.hint').click(); await pg.getByRole('button', { name: 'Finish Session' }).click();
   await pg.getByRole('button', { name: 'Done' }).waitFor({ timeout: 8000 });
-  console.log(label, '→', (await pg.locator('h1').innerText()), '|', (await pg.locator('.flag').count()) ? 'RED FLAG card' : 'no flag', '|', (await pg.locator('.note b').first().innerText()), '|', (await pg.locator('.stats').first().innerText()).replace(/\n/g, ' '));
+  console.log(label, '→', (await pg.locator('h1').innerText()), '|', (await pg.locator('.flag').count()) ? 'RED FLAG card' : 'no flag', '|', (await pg.locator('.note b, .flag b').allInnerTexts()).join(' / '), '|', (await pg.locator('.stats').first().innerText()).replace(/\n/g, ' '));
   await pg.getByRole('button', { name: 'Done' }).click();
 };
 await pg.goto(`${B}/?enroll=${tok}`); await pg.getByRole('button', { name: 'Set up' }).click();

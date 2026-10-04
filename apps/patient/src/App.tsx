@@ -9,7 +9,15 @@ import { load, save, todayISO, wipe, type Persist } from './state';
 import { flushOutbox, queue, signAndSend } from './outbox';
 import { RealSensor, requestMotionPermission, SimSensor, type Sensor } from './sensor';
 
-const PRESETS = { normal: { flexion: 96, extension: 0, pain: 2 }, redflag: { flexion: 78, extension: 2, pain: 7 } } as const;
+// Position illustrations: <posture>-<step>.svg (8 files, made by scripts/gen-illustrations.mjs).
+const POSES = import.meta.glob('./assets/poses/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const poseFor = (posture: Posture, step: string) => ({
+  src: POSES[`./assets/poses/${posture}-${step}.svg`],
+  alt: `${posture === 'lying' ? 'Lying on your back' : 'Sitting on a chair'}, ${step.startsWith('flex') ? 'knee bent' : 'leg straight'}, phone on the ${step.endsWith('thigh') ? 'thigh with its top edge toward the knee' : 'shin with its top edge toward the ankle'}`,
+});
+
+// Demo presets for week 3 (plan goal 78° flexion, pain limit 6): a typical good day, and a setback day like the stiff patient's.
+const PRESETS = { normal: { flexion: 82, extension: 1, pain: 3 }, redflag: { flexion: 62, extension: 9, pain: 7 } } as const;
 /** Verifies the clinic signature with the key pinned at enrolment. Returns the claims (or undefined). */
 async function protocolClaims(jws: string, p: Persist): Promise<ProtocolClaims | undefined> {
   try { return await verifyClaims<ProtocolClaims>(jws, await importPublic(p.clinicPub), 'protocol+jws'); } catch { return undefined; }
@@ -65,10 +73,11 @@ export function App() {
       onDone={(r) => { setResult(r); setTamper(false); setScreen('result'); }}
       update={update} />
   );
-  if (screen === 'result' && result) return <ResultView r={result} p={p} protocol={protocol} onHome={() => setScreen('home')} />;
+  const resetPhone = () => { wipe(); wipeKey(); setP(undefined); setProtocol(undefined); setScreen('home'); };
+  if (screen === 'result' && result) return <ResultView r={result} p={p} protocol={protocol} onHome={() => setScreen('home')} onReset={resetPhone} />;
   return (
     <Home p={p} protocol={protocol} today={today} planNote={planNote} onStart={() => setScreen('session')}
-      tools={<DemoTools p={p} update={update} tamper={tamper} setTamper={setTamper} reset={() => { wipe(); wipeKey(); setP(undefined); setProtocol(undefined); }} />} />
+      tools={<DemoTools p={p} update={update} tamper={tamper} setTamper={setTamper} reset={resetPhone} />} />
   );
 }
 
@@ -181,12 +190,22 @@ const STEPS: Step[] = ['guide', 'flex-thigh', 'flex-shin', 'ext-thigh', 'ext-shi
 const pos = (po: Posture) => (po === 'lying' ? 'Lie on your back' : 'Sit');
 function copy(step: Exclude<Step, 'guide' | 'pain'>, ext: Posture, flex: Posture): { title: string; body: string } {
   switch (step) {
-    case 'ext-thigh': return { title: 'Straighten: thigh', body: `${pos(ext)}, leg as straight as is comfortable${ext === 'lying' ? ', heel propped' : ', heel on the floor or a stool'}. Hold the phone against your thigh, top edge toward your foot.` };
-    case 'ext-shin': return { title: 'Straighten: shin', body: 'Keep your leg still. Move the phone to the shin, same direction: top edge toward your foot.' };
-    case 'flex-thigh': return { title: 'Bend: thigh', body: `${pos(flex)} and bend the knee as far as is comfortable. Hold the phone on your thigh, top edge toward your foot.` };
-    case 'flex-shin': return { title: 'Bend: shin', body: 'Keep your knee bent and still. Move the phone to the shin, top edge toward your foot.' };
+    case 'ext-thigh': return { title: 'Straighten: thigh', body: `${pos(ext)}, leg as straight as is comfortable${ext === 'lying' ? ', heel propped' : ', heel on the floor or a stool'}. Strap the phone on your thigh, just above the knee, top edge toward the knee.` };
+    case 'ext-shin': return { title: 'Straighten: shin', body: 'Keep your leg still. Move the phone to your shin, just below the knee, top edge toward your foot.' };
+    case 'flex-thigh': return { title: 'Bend: thigh', body: `${pos(flex)} and bend the knee as far as is comfortable. Strap the phone on your thigh, just above the knee, top edge toward the knee.` };
+    case 'flex-shin': return { title: 'Bend: shin', body: 'Keep your knee bent and still. Move the phone to your shin, just below the knee, top edge toward your foot.' };
   }
 }
+/** Why the clinic refused a message, in words a patient can act on. */
+const REFUSED: Record<string, { text: string; reset?: boolean }> = {
+  unknown_device: { text: 'This phone is not registered with the clinic any more (their demo data may have been reset). Set it up again with a new setup link.', reset: true },
+  signature_invalid: { text: 'The message was changed on the way, so the clinic refused it. Nothing was saved.' },
+  duplicate_jti: { text: 'The clinic already has this message.' }, stale_seq: { text: 'The clinic already has a newer message from this phone.' },
+  iat_out_of_window: { text: 'This phone’s clock is more than 5 minutes off. Turn on automatic date and time in the phone settings, then measure again.' },
+  date_out_of_window: { text: 'The date on this phone is too far from today’s date for the clinic to accept. Check the phone’s date and time.' },
+  values_out_of_range: { text: 'The values looked impossible. Please measure again.' }, fhir_invalid: { text: 'The result could not be read by the clinic. Please measure again.' },
+  no_protocol: { text: 'The clinic has no care plan for you yet. Ask them to set it up.' }, subject_mismatch: { text: 'This phone is registered to a different patient. Set it up again with a new setup link.', reset: true },
+};
 interface Result { summary: DailySummary; evaluation: Evaluation; sent: { ok: boolean; reason?: string; crossCheck?: string }; payloadPreview: unknown; replayed?: boolean }
 
 function Session({ p, protocol, today, tamper, onCancel, onDone, update }: { p: Persist; protocol: Protocol; today: string; tamper: boolean; onCancel: () => void; onDone: (r: Result) => void; update: (x: Partial<Persist>) => void }) {
@@ -237,7 +256,7 @@ function Session({ p, protocol, today, tamper, onCancel, onDone, update }: { p: 
       {step === 'guide' && <Guide sim={p.sim} leg={leg} operated={operated} onLeg={setLeg} onNext={() => setI(1)} onCancel={onCancel} />}
       {step !== 'guide' && step !== 'pain' && (
         <Reading key={step} title={copy(step, ext, flex).title} body={copy(step, ext, flex).body} lead={`${legName} knee · ${copy(step, ext, flex).title.toLowerCase()}`}
-          sim={p.sim} hint={hint[step]} kneeRef={kneeRef} goal={goal} onCapture={(a) => capture(a)} onCancel={onCancel}
+          pose={poseFor(step.startsWith('ext') ? ext : flex, step)} sim={p.sim} hint={hint[step]} kneeRef={kneeRef} goal={goal} onCapture={(a) => capture(a)} onCancel={onCancel}
           picker={(step === 'ext-thigh' || step === 'flex-thigh') && <PosturePick value={step === 'ext-thigh' ? ext : flex} onPick={step === 'ext-thigh' ? setExt : setFlex} note={step === 'ext-thigh' ? 'Lying down gives steadier straightening readings, but sitting is fine too.' : undefined} />} />
       )}
       {step === 'pain' && <Pain hint={p.sim ? preset.pain : undefined} busy={busy} onFinish={finish} onCancel={onCancel} />}
@@ -264,7 +283,7 @@ function Guide({ sim, leg, operated, onLeg, onNext, onCancel }: { sim: boolean; 
       <div class="mid">
       <h1>Strap your phone below the knee.</h1>
       <ol class="steps">
-        <li>1. <span>Screen facing out, on your shin, top edge toward your foot.</span></li>
+        <li>1. <span>Screen facing out. On the thigh the top edge points to your knee, on the shin to your foot.</span></li>
         <li>2. <span>Pull both straps snug.</span></li>
         <li>3. <span>Four short readings: bend first, then straighten.</span></li>
       </ol>
@@ -282,7 +301,7 @@ function Guide({ sim, leg, operated, onLeg, onNext, onCancel }: { sim: boolean; 
   );
 }
 
-function Reading({ title, body, lead, sim, hint, kneeRef, goal, picker, onCapture, onCancel }: { title: string; body: string; lead: string; sim: boolean; hint: number; kneeRef?: number; goal?: number; picker?: any; onCapture: (a: number) => void; onCancel: () => void }) {
+function Reading({ title, body, lead, pose, sim, hint, kneeRef, goal, picker, onCapture, onCancel }: { title: string; body: string; lead: string; pose: { src: string; alt: string }; sim: boolean; hint: number; kneeRef?: number; goal?: number; picker?: any; onCapture: (a: number) => void; onCancel: () => void }) {
   type Phase = 'ready' | 'active';
   const [phase, setPhase] = useState<Phase>('ready');
   const [live, setLive] = useState({ angle: 0, progress: 0, stable: false, inPlane: true, moved: false });
@@ -316,12 +335,14 @@ function Reading({ title, body, lead, sim, hint, kneeRef, goal, picker, onCaptur
         <>
           <h1>{title}</h1><p class="muted">{body}</p>
           {picker}
+          <img class="pose" src={pose.src} alt={pose.alt} width="900" height="600" />
           <button class="link" onClick={onCancel}>Cancel</button>
           <div class="bar"><button class="btn primary" onClick={start}>Start</button></div>
         </>
       ) : (
         <>
           <p class="lead">{lead}</p>
+          <img class="pose small" src={pose.src} alt={pose.alt} width="900" height="600" />
           <div class="big" aria-live="off">{live.stable ? '✓' : left > 0 ? left : `${Math.round(shown)}°`}</div>
           <div class="meter"><div class="track"><i class="fill" style={{ width: `${Math.round(live.progress * 100)}%` }} /></div>{goal !== undefined && <span class="goal">Goal {goal}°</span>}</div>
           <div class="caption">{kneeRef !== undefined ? 'Knee angle' : 'Phone angle'}</div>
@@ -349,7 +370,7 @@ function Pain({ hint, busy, onFinish, onCancel }: { hint?: number; busy: boolean
 }
 
 // ---------------------------------------------------------------- result
-function ResultView({ r, p, protocol, onHome }: { r: Result; p: Persist; protocol: Protocol; onHome: () => void }) {
+function ResultView({ r, p, protocol, onHome, onReset }: { r: Result; p: Persist; protocol: Protocol; onHome: () => void; onReset: () => void }) {
   const [show, setShow] = useState(false); const e = r.evaluation; const today = r.summary.date;
   const own = operatedHistory(protocol, p.history); const wk = weekCompare(own, today);
   const lastWeek = own.find((h) => h.date === shift(today, -7))?.flexion;
@@ -366,19 +387,27 @@ function ResultView({ r, p, protocol, onHome }: { r: Result; p: Persist; protoco
         <Stat label="Range" v={rom(r.summary)} />
         <div class="stat"><b>{r.summary.pain}</b><span>Pain</span><small>of 10</small></div>
       </div>
-      {e.status === 'alert' && (
-        <div class="flag" role="status"><FlagIcon /><div><b>Your care team will take a look</b><p>Today’s values deviate from the plan, so a short note was sent to your clinician. This is not a diagnosis.</p></div></div>
+      {e.status === 'alert' && (r.sent.ok || offline) && (
+        <div class="flag" role="status"><FlagIcon /><div><b>Your care team will take a look</b><p>Today’s values deviate from the plan, so a short note {r.sent.ok ? 'was sent' : 'will be sent when you are online'} to your clinician. This is not a diagnosis.</p></div></div>
       )}
       <div class="next"><div class="k">{e.reference ? 'Saved for comparison' : 'Your next step'}</div><p class="v">{e.nextStep}</p></div>
       {e.milestoneReached && <p class="win">You have reached the bend and straighten goals for this stage. Your clinician will check the rest and decide on the next stage.</p>}
-      <div class={`note ${r.sent.ok || offline ? '' : 'rejected'}`}>
-        <b>{r.sent.ok ? 'Sent to your care team' : offline ? 'Saved on this phone' : 'Not delivered'}</b>
-        {r.sent.ok ? <p class="muted">Only today’s numbers and any alert were sent, signed by this phone. Raw sensor readings stayed on the phone.</p>
-          : offline ? <p class="muted">No connection to your care team right now. Today’s result is saved and will be sent automatically when you are online.</p>
-          : <p class="error">The clinic rejected this message ({r.sent.reason}). Nothing was changed on their side.</p>}
-        <button class="link" onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'} exactly what was sent</button>
-        {show && <pre class="payload">{JSON.stringify({ patient: r.payloadPreview && (r.payloadPreview as any).sub, seq: (r.payloadPreview as any).seq, leg: r.summary.leg, flexion: r.summary.flexion, extension: r.summary.extension, positions: [r.summary.extPosture, r.summary.flexPosture], pain: r.summary.pain, date: r.summary.date, alerts: e.alerts.map((a) => a.kind), note: 'no name, no raw sensor data' }, null, 1)}</pre>}
-      </div>
+      {!r.sent.ok && !offline ? (
+        <div class="flag" role="alert"><FlagIcon /><div>
+          <b>Not delivered</b>
+          <p>{(REFUSED[r.sent.reason ?? ''] ?? { text: 'The clinic refused this message. Your result is not saved on their side.' }).text}</p>
+          <p class="caption">Code: {r.sent.reason}</p>
+          {REFUSED[r.sent.reason ?? '']?.reset && <button class="chip on" onClick={onReset}>Set up this phone again</button>}
+        </div></div>
+      ) : (
+        <div class="note">
+          <b>{r.sent.ok ? 'Sent to your care team' : 'Saved on this phone'}</b>
+          {r.sent.ok ? <p class="muted">Only today’s numbers and any alert were sent, signed by this phone. Raw sensor readings stayed on the phone.</p>
+            : <p class="muted">No connection to your care team right now. Today’s result is saved and will be sent automatically when you are online.</p>}
+          <button class="link" onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'} exactly what was sent</button>
+          {show && <pre class="payload">{JSON.stringify({ patient: r.payloadPreview && (r.payloadPreview as any).sub, seq: (r.payloadPreview as any).seq, leg: r.summary.leg, flexion: r.summary.flexion, extension: r.summary.extension, positions: [r.summary.extPosture, r.summary.flexPosture], pain: r.summary.pain, date: r.summary.date, alerts: e.alerts.map((a) => a.kind), note: 'no name, no raw sensor data' }, null, 1)}</pre>}
+        </div>
+      )}
       <Disclaimer />
       <div class="bar"><button class="btn primary" onClick={onHome}>Done</button></div>
     </Shell>
