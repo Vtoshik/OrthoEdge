@@ -1,0 +1,2 @@
+{ "name": "spike-medplum", "private": true, "type": "module",
+  "dependencies": { "@medplum/core": "5.2.1", "@medplum/fhirtypes": "5.2.1", "@medplum/definitions": "5.2.1" } }

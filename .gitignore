@@ -1,0 +1,9 @@
+node_modules
+dist
+data/runtime
+data/certs
+.DS_Store
+
+# documentation and notes stay local
+*.md
+*.pdf

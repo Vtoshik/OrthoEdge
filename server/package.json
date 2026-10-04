@@ -1,0 +1,3 @@
+{ "name": "@tele/server", "private": true, "type": "module",
+  "scripts": { "start": "tsx src/main.ts" },
+  "dependencies": { "@tele/engine": "*", "fastify": "^5.0.0", "@fastify/static": "^8.0.0" } }

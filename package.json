@@ -1,0 +1,26 @@
+{
+  "name": "tele-rehab-demo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "server",
+    "spikes/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "build": "npm run build -w apps/patient -w apps/portal",
+    "cert": "scripts/make-cert.sh",
+    "demo": "npm run build && DEMO_ALLOW_ANY_DATE=1 tsx server/src/main.ts --reseed",
+    "start": "tsx server/src/main.ts",
+    "e2e": "NODE_TLS_REJECT_UNAUTHORIZED=0 node scripts/e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}

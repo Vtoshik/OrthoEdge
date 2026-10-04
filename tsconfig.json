@@ -1,0 +1,3 @@
+{ "compilerOptions": { "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler", "strict": true, "jsx": "react-jsx", "jsxImportSource": "preact",
+  "skipLibCheck": true, "noEmit": true, "allowImportingTsExtensions": true, "types": ["vite/client", "node"], "lib": ["ES2022", "DOM", "DOM.Iterable"] },
+  "include": ["packages/*/src", "apps/*/src", "server/src"] }

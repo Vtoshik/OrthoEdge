@@ -1,0 +1,4 @@
+{ "name": "@tele/engine", "private": true, "type": "module",
+  "exports": { ".": "./src/index.ts", "./validate": "./src/validate.ts" },
+  "dependencies": { "jose": "^5.9.0" },
+  "devDependencies": { "@medplum/core": "5.2.1", "@medplum/definitions": "5.2.1", "@medplum/fhirtypes": "5.2.1" } }
