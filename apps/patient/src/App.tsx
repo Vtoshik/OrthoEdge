@@ -53,35 +53,73 @@ export function App() {
     go(); window.addEventListener('online', go); return () => window.removeEventListener('online', go);
   }, [p?.pseudonym]);
 
-  if (!window.isSecureContext) return <Shell><h1>Secure connection needed</h1><p>This app needs HTTPS to read motion sensors and sign data. Open the https:// link from your clinic.</p></Shell>;
+  if (!window.isSecureContext) return <Shell center><h1>Secure connection needed</h1><p class="muted">This app needs HTTPS to read motion sensors and sign data. Open the https:// link from your clinic.</p></Shell>;
   if (!p) return <Enroll token={enrollToken} onDone={(np) => { save(np); setP(np); history.replaceState(null, '', '/'); }} />;
-  if (bootErr) return <Shell><h1>Care plan problem</h1><p>{bootErr}</p><button class="btn secondary" onClick={() => { wipe(); wipeKey(); setP(undefined); }}>Reset this phone</button></Shell>;
-  if (!protocol) return <Shell><p class="muted">Checking your care plan…</p></Shell>;
+  if (bootErr) return <Shell center><h1>Care plan problem</h1><p class="muted">{bootErr}</p><div class="bar"><button class="btn ghost" onClick={() => { wipe(); wipeKey(); setP(undefined); }}>Reset this phone</button></div></Shell>;
+  if (!protocol) return <Shell center><p class="muted">Checking your care plan…</p></Shell>;
 
   const today = todayISO(p.dayOffset);
+  if (screen === 'session') return (
+    <Session p={p} protocol={protocol} today={today} tamper={tamper}
+      onCancel={() => setScreen('home')}
+      onDone={(r) => { setResult(r); setTamper(false); setScreen('result'); }}
+      update={update} />
+  );
+  if (screen === 'result' && result) return <ResultView r={result} p={p} protocol={protocol} onHome={() => setScreen('home')} />;
   return (
-    <Shell>
-      {screen === 'home' && planNote && <p class="muted" role="status">{planNote}</p>}
-      {screen === 'home' && <Home p={p} protocol={protocol} today={today} onStart={() => setScreen('session')} />}
-      {screen === 'session' && (
-        <Session p={p} protocol={protocol} today={today} tamper={tamper}
-          onCancel={() => setScreen('home')}
-          onDone={(r) => { setResult(r); setTamper(false); setScreen('result'); }}
-          update={update} />
-      )}
-      {screen === 'result' && result && <ResultView r={result} p={p} onHome={() => setScreen('home')} />}
-      {screen === 'home' && <DemoTools p={p} update={update} tamper={tamper} setTamper={setTamper} reset={() => { wipe(); wipeKey(); setP(undefined); setProtocol(undefined); }} />}
-      <footer class="disclaimer">Demonstration prototype with synthetic data. Not a medical device. It does not diagnose or change treatment.</footer>
-    </Shell>
+    <Home p={p} protocol={protocol} today={today} planNote={planNote} onStart={() => setScreen('session')}
+      tools={<DemoTools p={p} update={update} tamper={tamper} setTamper={setTamper} reset={() => { wipe(); wipeKey(); setP(undefined); setProtocol(undefined); }} />} />
   );
 }
 
-const Shell = ({ children }: { children?: any }) => <main class="shell"><header class="brand"><span class="dot" />KneeTrack</header>{children}</main>;
+// ---------------------------------------------------------------- shell
+/** Top switch between the two views (demo navigation, as in the design), content column, and room for a sticky bottom bar. */
+function Shell({ children, center }: { children?: any; center?: boolean }) {
+  return (
+    <div class="shell">
+      <nav class="switch" aria-label="View"><span class="on" aria-current="page">Patient</span><a href="/portal/">Clinician</a></nav>
+      <main class={`content ${center ? 'center' : ''}`}>{children}</main>
+    </div>
+  );
+}
+const Disclaimer = () => <p class="disclaimer">Demonstration prototype with synthetic data. Not a medical device. It does not diagnose or change treatment.</p>;
+const FlagIcon = () => <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#b3261e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 25V4M6 5h15l-3 5.5 3 5.5H6" /></svg>;
+
+// ---------------------------------------------------------------- week comparison
+const shift = (d: string, n: number) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86_400_000).toISOString().slice(0, 10);
+const letter = (d: string) => 'SMTWTFS'[new Date(d + 'T00:00:00Z').getUTCDay()];
+/** This week = the 7 days ending today, last week = the 7 days before; flexion per day (undefined = no reading). */
+function weekCompare(own: DailySummary[], today: string) {
+  const days = Array.from({ length: 7 }, (_, i) => shift(today, i - 6));
+  const at = (d: string) => own.find((h) => h.date === d)?.flexion;
+  return { days, now: days.map(at), before: days.map((d) => at(shift(d, -7))) };
+}
+function WeekChart({ days, now, before, goal }: { days: string[]; now: (number | undefined)[]; before: (number | undefined)[]; goal?: number }) {
+  const vals = [...now, ...before, goal].filter((v): v is number => v !== undefined);
+  if (!now.some((v) => v !== undefined)) return null;
+  const lo = Math.floor((Math.min(...vals) - 5) / 10) * 10, hi = Math.max(lo + 30, Math.ceil((Math.max(...vals) + 5) / 10) * 10);
+  const W = 354, H = 215, L = 44, R = 10, T = 10, B = 28;
+  const x = (i: number) => L + (i * (W - L - R)) / 6, y = (v: number) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const path = (a: (number | undefined)[]) => a.map((v, i) => (v === undefined ? '' : `${i === 0 || a[i - 1] === undefined ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`)).join(' ');
+  const ticks: number[] = []; for (let t = lo; t <= hi; t += 10) ticks.push(t);
+  const lastI = now.map((v) => v !== undefined).lastIndexOf(true);
+  return (
+    <svg class="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Knee bend by day, this week compared with last week">
+      {ticks.map((t) => <g><line class="grid" x1={L} x2={W - R} y1={y(t)} y2={y(t)} /><text class="ax" x={L - 8} y={y(t) + 5} text-anchor="end">{t}°</text></g>)}
+      {goal !== undefined && goal >= lo && goal <= hi && <line class="goalline" x1={L} x2={W - R} y1={y(goal)} y2={y(goal)} />}
+      <path class="before" d={path(before)} /><path class="now" d={path(now)} />
+      {days.map((d, i) => <text class="ax" x={x(i)} y={H - 6} text-anchor="middle">{letter(d)}</text>)}
+      {lastI >= 0 && <circle class="dot" cx={x(lastI)} cy={y(now[lastI]!)} r="7" />}
+    </svg>
+  );
+}
+const Legend = () => <div class="legend"><span><i /> This week</span><span><i class="d" /> Last week</span></div>;
+const Stat = ({ label, v, sub }: { label: string; v: number; sub?: string }) => <div class="stat"><b>{Math.round(v)}°</b><span>{label}</span>{sub && <small>{sub}</small>}</div>;
 
 // ---------------------------------------------------------------- enroll
 function Enroll({ token, onDone }: { token: string | null; onDone: (p: Persist) => void }) {
   const [state, setState] = useState<'idle' | 'busy' | 'err'>('idle'); const [msg, setMsg] = useState('');
-  if (!token) return <Shell><h1>Welcome</h1><p>Your clinic gives you a setup link or QR code. Open it on this phone to start.</p></Shell>;
+  if (!token) return <Shell center><h1>Welcome</h1><p class="muted">Your clinic gives you a setup link or QR code. Open it on this phone to start.</p></Shell>;
   const go = async () => {
     setState('busy');
     try {
@@ -97,49 +135,43 @@ function Enroll({ token, onDone }: { token: string | null; onDone: (p: Persist) 
   };
   return (
     <Shell>
-      <h1>Set up this phone</h1>
-      <p>This links your phone to your care team. A private signing key is created on this phone and never leaves it.</p>
-      <button class="btn primary" disabled={state === 'busy'} onClick={go}>{state === 'busy' ? 'Setting up…' : 'Set up'}</button>
-      {state === 'err' && <p class="error">{msg}</p>}
+      <div class="mid"><h1>Set up this phone</h1>
+      <p class="muted">This links your phone to your care team. A private signing key is created on this phone and never leaves it.</p>
+      {state === 'err' && <p class="error">{msg}</p>}</div>
+      <div class="bar"><button class="btn primary" disabled={state === 'busy'} onClick={go}>{state === 'busy' ? 'Setting up…' : 'Set up'}</button></div>
     </Shell>
   );
 }
 
 // ---------------------------------------------------------------- home
-function Home({ p, protocol, today, onStart }: { p: Persist; protocol: Protocol; today: string; onStart: () => void }) {
+function Home({ p, protocol, today, planNote, onStart, tools }: { p: Persist; protocol: Protocol; today: string; planNote: string; onStart: () => void; tools: any }) {
   const own = operatedHistory(protocol, p.history); // reference readings of the other knee are not part of the trend
   const done = own.some((h) => h.date === today);
   const gap = missedDays(own, today);
   const last = own.at(-1);
   const week = weekOf(protocol, today); const st = stageFor(protocol, week);
+  const wk = weekCompare(own, today);
   return (
-    <>
+    <Shell>
       <h1>{gap >= 3 ? 'Welcome back' : 'Good to see you'}</h1>
-      <p class="muted">{gap >= 3 ? 'Glad you are here. Your progress is exactly where you left it.' : `Week ${week}${phaseInfo(protocol) ? ` · ${phaseInfo(protocol)!.name}` : ''}`}</p>
-      {last && <section class="card"><div class="muted">Latest</div>
-        <div class="nums"><Num label="Bend" v={last.flexion} target={`goal ${st.flexionTargetDeg}°`} /><Num label="Straighten" v={last.extension} target={`goal ${st.extensionTargetDeg}°`} /><Num label="Range" v={rom(last)} target="bend − straighten" /></div><div class="muted tiny center">Plan goals are examples set by your clinician.</div></section>}
+      <p class="lead">{gap >= 3 ? 'Glad you are here. Your progress is exactly where you left it.' : `Week ${week}${phaseInfo(protocol) ? ` · ${phaseInfo(protocol)!.name}` : ''}`}</p>
+      {planNote && <p class="muted tiny" role="status">{planNote}</p>}
+      {last && (
+        <div class="stats">
+          <Stat label="Bend" v={last.flexion} sub={`plan goal ${st.flexionTargetDeg}°`} />
+          <Stat label="Straighten" v={last.extension} sub={`plan goal ${st.extensionTargetDeg}°`} />
+          <Stat label="Range" v={rom(last)} />
+        </div>
+      )}
+      {last && <div class="caption center-t">Plan goals are examples set by your clinician.</div>}
       {!!p.outbox?.length && <p class="muted" role="status">{p.outbox.length} day(s) saved on this phone, waiting to be sent.</p>}
       {p.note && <p class="error" role="status">{p.note}</p>}
-      <Trend history={own} protocol={protocol} />
-      <button class="btn primary big" onClick={onStart}>{done ? 'Measure again' : 'Start today’s session'}</button>
-      <p class="muted center">About 2 minutes. {done && 'Today is already saved.'}</p>
-    </>
-  );
-}
-const Num = ({ label, v, target }: { label: string; v: number; target: string }) => <div class="num"><b>{Math.round(v)}°</b><span>{label}</span><small>{target}</small></div>;
-
-function Trend({ history, protocol }: { history: DailySummary[]; protocol: Protocol }) {
-  const h = history.slice(-14); if (h.length < 2) return null;
-  const W = 320, H = 130, pad = 22, lo = 40, hi = 120;
-  const x = (i: number) => pad + (i * (W - 2 * pad)) / (h.length - 1), y = (v: number) => H - pad - ((Math.min(hi, Math.max(lo, v)) - lo) * (H - 2 * pad)) / (hi - lo);
-  const line = h.map((d, i) => `${i ? 'L' : 'M'}${x(i)},${y(d.flexion)}`).join(' ');
-  const target = h.map((d, i) => `${i ? 'L' : 'M'}${x(i)},${y(stageFor(protocol, weekOf(protocol, d.date)).flexionTargetDeg)}`).join(' ');
-  return (
-    <section class="card" aria-label="Bend trend">
-      <div class="muted">Bend (flexion) over time</div>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img"><path d={target} class="tgt" /><path d={line} class="ln" />{h.map((d, i) => <circle cx={x(i)} cy={y(d.flexion)} r="3" class="pt" />)}</svg>
-      <div class="legend"><span><i class="ln-k" /> You</span><span><i class="tgt-k" /> Plan goal</span></div>
-    </section>
+      <WeekChart {...wk} goal={st.flexionTargetDeg} />
+      {wk.now.some((v) => v !== undefined) && <Legend />}
+      {tools}
+      <Disclaimer />
+      <div class="bar"><button class="btn primary" onClick={onStart}>{done ? 'Measure again' : 'Start today’s session'}</button></div>
+    </Shell>
   );
 }
 
@@ -193,52 +225,64 @@ function Session({ p, protocol, today, tamper, onCancel, onDone, update }: { p: 
     onDone({ summary, evaluation, sent, payloadPreview: { sub: p.pseudonym, seq, bundle } });
   };
 
+  const wk = weekOf(protocol, today); const goals = stageFor(protocol, wk);
+  const kneeRef = step === 'flex-shin' ? ang['flex-thigh'] : step === 'ext-shin' ? ang['ext-thigh'] : undefined;
+  const goal = step === 'flex-shin' ? goals.flexionTargetDeg : step === 'ext-shin' ? goals.extensionTargetDeg : undefined;
+  const legName = leg === 'left' ? 'Left' : 'Right';
+
   return (
-    <>
+    <Shell>
       <div class="progress" aria-label={`Step ${i + 1} of ${STEPS.length}`}>{STEPS.map((_, k) => <i class={k <= i ? 'on' : ''} />)}</div>
-      {step === 'guide' && <Guide sim={p.sim} leg={leg} operated={operated} onLeg={setLeg} onNext={() => setI(1)} />}
       {problem && <p class="error" role="alert">{problem}</p>}
-      {step !== 'guide' && step !== 'pain' && (<>
-        {(step === 'ext-thigh' || step === 'flex-thigh') && <PosturePick value={step === 'ext-thigh' ? ext : flex} onPick={step === 'ext-thigh' ? setExt : setFlex} note={step === 'ext-thigh' ? 'Lying down gives steadier straightening readings, but sitting is fine too.' : undefined} />}
-        <Reading key={step} title={copy(step, ext, flex).title} body={copy(step, ext, flex).body} sim={p.sim} hint={hint[step]} onCapture={(a) => capture(a)} /></>
+      {step === 'guide' && <Guide sim={p.sim} leg={leg} operated={operated} onLeg={setLeg} onNext={() => setI(1)} onCancel={onCancel} />}
+      {step !== 'guide' && step !== 'pain' && (
+        <Reading key={step} title={copy(step, ext, flex).title} body={copy(step, ext, flex).body} lead={`${legName} knee · ${copy(step, ext, flex).title.toLowerCase()}`}
+          sim={p.sim} hint={hint[step]} kneeRef={kneeRef} goal={goal} onCapture={(a) => capture(a)} onCancel={onCancel}
+          picker={(step === 'ext-thigh' || step === 'flex-thigh') && <PosturePick value={step === 'ext-thigh' ? ext : flex} onPick={step === 'ext-thigh' ? setExt : setFlex} note={step === 'ext-thigh' ? 'Lying down gives steadier straightening readings, but sitting is fine too.' : undefined} />} />
       )}
-      {step === 'pain' && <Pain hint={p.sim ? preset.pain : undefined} busy={busy} onPick={finish} />}
-      <button class="btn link" onClick={onCancel}>Cancel</button>
-    </>
+      {step === 'pain' && <Pain hint={p.sim ? preset.pain : undefined} busy={busy} onFinish={finish} onCancel={onCancel} />}
+    </Shell>
   );
 }
 
 function PosturePick({ value, onPick, note }: { value: Posture; onPick: (p: Posture) => void; note?: string }) {
   return (
-    <div class="posture" role="group" aria-label="Your position">
+    <div class="chips" role="group" aria-label="Your position">
       <span class="muted">Your position</span>
       <button class={`chip ${value === 'lying' ? 'on' : ''}`} aria-pressed={value === 'lying'} onClick={() => onPick('lying')}>Lying down</button>
       <button class={`chip ${value === 'sitting' ? 'on' : ''}`} aria-pressed={value === 'sitting'} onClick={() => onPick('sitting')}>Sitting</button>
-      {note && <small class="muted">{note}</small>}
+      {note && <small class="caption">{note}</small>}
     </div>
   );
 }
 
-function Guide({ sim, leg, operated, onLeg, onNext }: { sim: boolean; leg: Leg; operated: Leg; onLeg: (l: Leg) => void; onNext: () => void }) {
+function Guide({ sim, leg, operated, onLeg, onNext, onCancel }: { sim: boolean; leg: Leg; operated: Leg; onLeg: (l: Leg) => void; onNext: () => void; onCancel: () => void }) {
   const [err, setErr] = useState('');
   const go = async () => { if (sim) return onNext(); const r = await requestMotionPermission(); if (r === 'granted') onNext(); else setErr(r === 'denied' ? 'Motion access was refused. Allow it in the browser settings to measure.' : 'This device has no motion sensor. Use the demo tools to simulate one.'); };
   return (
     <>
-      <h1>Place your phone</h1>
-      <div class="posture" role="group" aria-label="Which leg">
+      <div class="mid">
+      <h1>Strap your phone below the knee.</h1>
+      <ol class="steps">
+        <li>1. <span>Screen facing out, on your shin, top edge toward your foot.</span></li>
+        <li>2. <span>Pull both straps snug.</span></li>
+        <li>3. <span>Four short readings: bend first, then straighten.</span></li>
+      </ol>
+      <div class="chips" role="group" aria-label="Which knee">
         <span class="muted">Which knee?</span>
         <button class={`chip ${leg === 'left' ? 'on' : ''}`} aria-pressed={leg === 'left'} onClick={() => onLeg('left')}>Left</button>
         <button class={`chip ${leg === 'right' ? 'on' : ''}`} aria-pressed={leg === 'right'} onClick={() => onLeg('right')}>Right</button>
-        {leg !== operated && <small class="muted">This is your other knee. It will be saved as a reference reading for comparison and will not trigger alerts.</small>}
+        {leg !== operated && <small class="caption">This is your other knee. It is saved as a reference reading for comparison and does not trigger alerts.</small>}
       </div>
-      <ol class="steps"><li>Strap or hold the phone on the <b>outer side</b> of your leg, screen facing out.</li><li>Keep the <b>top edge pointing toward your foot</b>.</li><li>For each reading: tap <b>Start</b>, move the phone into place, then hold still until the ring fills. Four readings, then one pain tap.</li></ol>
-      <button class="btn primary big" onClick={go}>I’m ready</button>
       {err && <p class="error">{err}</p>}
+      <button class="link" onClick={onCancel}>Cancel</button>
+      </div>
+      <div class="bar"><button class="btn primary" onClick={go}>I’m ready</button></div>
     </>
   );
 }
 
-function Reading({ title, body, sim, hint, onCapture }: { title: string; body: string; sim: boolean; hint: number; onCapture: (a: number) => void }) {
+function Reading({ title, body, lead, sim, hint, kneeRef, goal, picker, onCapture, onCancel }: { title: string; body: string; lead: string; sim: boolean; hint: number; kneeRef?: number; goal?: number; picker?: any; onCapture: (a: number) => void; onCancel: () => void }) {
   type Phase = 'ready' | 'active';
   const [phase, setPhase] = useState<Phase>('ready');
   const [live, setLive] = useState({ angle: 0, progress: 0, stable: false, inPlane: true, moved: false });
@@ -263,52 +307,81 @@ function Reading({ title, body, sim, hint, onCapture }: { title: string; body: s
   const stopRef = useRef<() => void>(() => {});
   useEffect(() => () => stopRef.current(), []);
 
-  const C = 2 * Math.PI * 54;
-  const hintTxt = live.stable ? 'Got it' : left > 0 ? `Move the phone into place… ${left}` : !live.inPlane ? 'Turn the phone: screen facing outward, not flat' : !live.moved ? 'Move the phone to this position first' : live.stable ? 'Got it' : 'Hold still';
+  const hintTxt = live.stable ? 'Got it' : left > 0 ? `Move the phone into place… ${left}` : !live.inPlane ? 'Turn the phone: screen facing outward, not flat' : !live.moved ? 'Move the phone to this position first' : 'Hold still';
+  // Shin readings show the live KNEE angle against the thigh reading just taken; thigh readings show the phone's own tilt.
+  const shown = kneeRef !== undefined ? kneeAngle(kneeRef, live.angle) : live.angle;
   return (
     <>
-      <h1>{title}</h1><p>{body}</p>
-      {phase === 'ready' ? <button class="btn primary big" onClick={start}>Start</button> : (
-        <div class="ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="54" class="bg" /><circle cx="60" cy="60" r="54" class="fg" stroke-dasharray={C} stroke-dashoffset={C * (1 - live.progress)} /></svg>
-          <div class="ringtxt"><b>{live.stable ? '✓' : left > 0 ? left : `${Math.round(live.angle)}°`}</b><span>{hintTxt}</span></div></div>)}
-      {sim && phase === 'active' && <label class="sim">Simulated sensor: segment angle {simAngle}°<input type="range" min="-30" max="170" value={simAngle} onInput={(e) => setSimAngle(+(e.target as HTMLInputElement).value)} /></label>}
+      {phase === 'ready' ? (
+        <>
+          <h1>{title}</h1><p class="muted">{body}</p>
+          {picker}
+          <button class="link" onClick={onCancel}>Cancel</button>
+          <div class="bar"><button class="btn primary" onClick={start}>Start</button></div>
+        </>
+      ) : (
+        <>
+          <p class="lead">{lead}</p>
+          <div class="big" aria-live="off">{live.stable ? '✓' : left > 0 ? left : `${Math.round(shown)}°`}</div>
+          <div class="meter"><div class="track"><i class="fill" style={{ width: `${Math.round(live.progress * 100)}%` }} /></div>{goal !== undefined && <span class="goal">Goal {goal}°</span>}</div>
+          <div class="caption">{kneeRef !== undefined ? 'Knee angle' : 'Phone angle'}</div>
+          <p class="state" role="status">{hintTxt}</p>
+          <p class="muted">{body}</p>
+          {sim && <label class="sim">Simulated sensor: segment angle {simAngle}°<input type="range" min="-30" max="170" value={simAngle} onInput={(e) => setSimAngle(+(e.target as HTMLInputElement).value)} /></label>}
+          <button class="link" onClick={onCancel}>Cancel</button>
+        </>
+      )}
     </>
   );
 }
 
-function Pain({ hint, busy, onPick }: { hint?: number; busy: boolean; onPick: (n: number) => void }) {
+function Pain({ hint, busy, onFinish, onCancel }: { hint?: number; busy: boolean; onFinish: (n: number) => void; onCancel: () => void }) {
+  const [sel, setSel] = useState<number>();
   return (
     <>
-      <h1>How much does it hurt right now?</h1><p class="muted">0 is no pain, 10 is the worst you can imagine.{hint !== undefined && ` (Demo preset: ${hint})`}</p>
-      <div class="pain">{Array.from({ length: 11 }, (_, n) => <button disabled={busy} class={`pbtn ${n === hint ? 'hint' : ''}`} onClick={() => onPick(n)}>{n}</button>)}</div>
-      {busy && <p class="muted center">Saving and sending…</p>}
+      <h2 style={{ marginTop: '16px' }}>How much does it hurt?</h2><p class="muted">0 is none, 10 is the worst.{hint !== undefined && ` (Demo preset: ${hint})`}</p>
+      <div class="pain" role="radiogroup" aria-label="Pain from 0 to 10">{Array.from({ length: 11 }, (_, n) => <button disabled={busy} role="radio" aria-checked={sel === n} class={`pbtn ${sel === n ? 'on' : ''} ${n === hint ? 'hint' : ''}`} onClick={() => setSel(n)}>{n}</button>)}</div>
+      {busy && <p class="muted center-t">Saving and sending…</p>}
+      <button class="link" onClick={onCancel}>Cancel</button>
+      <div class="bar"><button class="btn primary" disabled={sel === undefined || busy} onClick={() => sel !== undefined && onFinish(sel)}>Finish Session</button></div>
     </>
   );
 }
 
 // ---------------------------------------------------------------- result
-function ResultView({ r, p, onHome }: { r: Result; p: Persist; onHome: () => void }) {
-  const [show, setShow] = useState(false); const e = r.evaluation;
+function ResultView({ r, p, protocol, onHome }: { r: Result; p: Persist; protocol: Protocol; onHome: () => void }) {
+  const [show, setShow] = useState(false); const e = r.evaluation; const today = r.summary.date;
+  const own = operatedHistory(protocol, p.history); const wk = weekCompare(own, today);
+  const lastWeek = own.find((h) => h.date === shift(today, -7))?.flexion;
+  const delta = lastWeek !== undefined ? r.summary.flexion - lastWeek : undefined;
+  const headline = e.reference ? 'Reference reading saved.' : delta === undefined ? 'Nice work today.' : delta > 0 ? `You bent ${delta}° further than last week.` : delta < 0 ? `Your bend is ${-delta}° below last week.` : 'Same bend as last week.';
+  const offline = !r.sent.ok && (r.sent.reason === 'offline' || r.sent.reason === 'server_unavailable');
   return (
-    <>
-      <h1>{e.reference ? 'Reference reading saved' : e.status === 'alert' ? 'Your care team will take a look' : 'Nice work today'}</h1>
-      <section class="card"><div class="nums"><Num label="Bend" v={r.summary.flexion} target={`goal ${e.flexionTarget}°`} /><Num label="Straighten" v={r.summary.extension} target={`goal ${e.extensionTarget}°`} /><Num label="Range" v={rom(r.summary)} target="of motion" /><Num label="Pain" v={r.summary.pain} target="of 10" /></div><div class="muted tiny center">Plan goals are examples set by your clinician.</div></section>
-      <section class={`card ${e.status === 'alert' ? 'flag' : ''}`}>
-        <b>Next step</b><p>{e.nextStep}</p>
-        {e.status === 'alert' && <p class="muted">Today’s values deviate from the plan, so a short note was sent to your clinician. This is not a diagnosis.</p>}
-        {e.milestoneReached && <p class="win">You have reached the bend and straighten goals for this stage. Your clinician will check the rest and decide on the next stage.</p>}
-      </section>
-      <section class={`card ${r.sent.ok ? '' : 'flag'}`}>
-        <b>{r.sent.ok ? 'Sent to your care team' : r.sent.reason === 'offline' || r.sent.reason === 'server_unavailable' ? 'Saved on this phone' : 'Not delivered'}</b>
-        {r.sent.ok ? <p class="muted">Only today’s three numbers and any alert were sent, signed by this phone. Raw sensor readings stayed on the phone.</p>
-          : r.sent.reason === 'offline' || r.sent.reason === 'server_unavailable' ? <p class="muted">No connection to your care team right now. Today’s result is saved and will be sent automatically when you are online.</p>
+    <Shell>
+      <h1>{headline}</h1>
+      {!e.reference && <><WeekChart {...wk} goal={e.flexionTarget} /><Legend /></>}
+      <div class="stats">
+        <Stat label="Bend" v={r.summary.flexion} sub={e.reference ? undefined : `plan goal ${e.flexionTarget}°`} />
+        <Stat label="Straighten" v={r.summary.extension} sub={e.reference ? undefined : `plan goal ${e.extensionTarget}°`} />
+        <Stat label="Range" v={rom(r.summary)} />
+        <div class="stat"><b>{r.summary.pain}</b><span>Pain</span><small>of 10</small></div>
+      </div>
+      {e.status === 'alert' && (
+        <div class="flag" role="status"><FlagIcon /><div><b>Your care team will take a look</b><p>Today’s values deviate from the plan, so a short note was sent to your clinician. This is not a diagnosis.</p></div></div>
+      )}
+      <div class="next"><div class="k">{e.reference ? 'Saved for comparison' : 'Your next step'}</div><p class="v">{e.nextStep}</p></div>
+      {e.milestoneReached && <p class="win">You have reached the bend and straighten goals for this stage. Your clinician will check the rest and decide on the next stage.</p>}
+      <div class={`note ${r.sent.ok || offline ? '' : 'rejected'}`}>
+        <b>{r.sent.ok ? 'Sent to your care team' : offline ? 'Saved on this phone' : 'Not delivered'}</b>
+        {r.sent.ok ? <p class="muted">Only today’s numbers and any alert were sent, signed by this phone. Raw sensor readings stayed on the phone.</p>
+          : offline ? <p class="muted">No connection to your care team right now. Today’s result is saved and will be sent automatically when you are online.</p>
           : <p class="error">The clinic rejected this message ({r.sent.reason}). Nothing was changed on their side.</p>}
-        <button class="btn link" onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'} exactly what was sent</button>
+        <button class="link" onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'} exactly what was sent</button>
         {show && <pre class="payload">{JSON.stringify({ patient: r.payloadPreview && (r.payloadPreview as any).sub, seq: (r.payloadPreview as any).seq, leg: r.summary.leg, flexion: r.summary.flexion, extension: r.summary.extension, positions: [r.summary.extPosture, r.summary.flexPosture], pain: r.summary.pain, date: r.summary.date, alerts: e.alerts.map((a) => a.kind), note: 'no name, no raw sensor data' }, null, 1)}</pre>}
-      </section>
-      <button class="btn primary big" onClick={onHome}>Done</button>
-      <span hidden>{p.pseudonym}</span>
-    </>
+      </div>
+      <Disclaimer />
+      <div class="bar"><button class="btn primary" onClick={onHome}>Done</button></div>
+    </Shell>
   );
 }
 

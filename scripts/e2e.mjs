@@ -17,9 +17,9 @@ const session = async (label, { sameBend = false } = {}) => {
   } else { await reading(); await reading(); }
   await reading(); await reading();                            // ext thigh, ext shin
   await pg.getByRole('heading', { name: /hurt/ }).waitFor({ timeout: 8000 });
-  await pg.locator('.pbtn.hint').click();
+  await pg.locator('.pbtn.hint').click(); await pg.getByRole('button', { name: 'Finish Session' }).click();
   await pg.getByRole('button', { name: 'Done' }).waitFor({ timeout: 8000 });
-  console.log(label, '→', (await pg.locator('h1').innerText()), '|', (await pg.locator('.card').nth(2).innerText()).split('\n')[0], '| ' + (await pg.locator('.nums').first().innerText()).replace(/\n/g, ' '));
+  console.log(label, '→', (await pg.locator('h1').innerText()), '|', (await pg.locator('.flag').count()) ? 'RED FLAG card' : 'no flag', '|', (await pg.locator('.note b').first().innerText()), '|', (await pg.locator('.stats').first().innerText()).replace(/\n/g, ' '));
   await pg.getByRole('button', { name: 'Done' }).click();
 };
 await pg.goto(`${B}/?enroll=${tok}`); await pg.getByRole('button', { name: 'Set up' }).click();
@@ -57,6 +57,6 @@ const adv = portal.getByRole('button', { name: /Advance to/ });
 console.log('advance disabled before checks:', await adv.isDisabled());
 for (const box of await portal.locator('.milestone input[type=checkbox]').all()) await box.check();
 await adv.click();
-await portal.getByText(/Stage 2 · building range \(2\/3\)/).waitFor({ timeout: 8000 });
+await portal.locator('.lead').getByText(/Stage 2 · building range/).waitFor({ timeout: 8000 });
 console.log('clinician advanced Stage 1 → 2 ✔; milestone flag gone:', (await portal.getByText(/May be ready for review/).count()) === 0);
 await br.close();

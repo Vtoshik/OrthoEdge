@@ -1,0 +1,32 @@
+import { chromium } from 'playwright-core';
+const B = process.env.BASE, OUT = process.env.OUT;
+const post = (u, b, h = {}) => fetch(B + u, { method: 'POST', headers: { 'content-type': 'application/json', 'x-portal-pin': '1234', ...h }, body: JSON.stringify(b) }).then((r) => r.json());
+const { token } = await post('/api/portal/enroll-token', { pseudonym: 'P-7F3A' });
+const br = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
+const ctx = await br.newContext({ ignoreHTTPSErrors: true, viewport: { width: 402, height: 882 }, deviceScaleFactor: 1 });
+const pg = await ctx.newPage(); pg.on('pageerror', (e) => console.log('PAGEERR', e.message));
+await pg.goto(`${B}/?enroll=${token}`); await pg.screenshot({ path: `${OUT}/p0-enroll.png` });
+await pg.getByRole('button', { name: 'Set up' }).click(); await pg.getByText(/Week \d/).waitFor();
+await pg.screenshot({ path: `${OUT}/p1-home.png` });
+await pg.getByRole('button', { name: /session/ }).click(); await pg.screenshot({ path: `${OUT}/p2-guide.png`, });
+await pg.getByRole('button', { name: 'I’m ready' }).click(); await pg.screenshot({ path: `${OUT}/p3-reading-ready.png` });
+await pg.getByRole('button', { name: 'Start' }).click(); await pg.waitForTimeout(1500); await pg.screenshot({ path: `${OUT}/p4-reading-grace.png` });
+await pg.getByText('Got it').waitFor({ timeout: 12000 }); await pg.waitForTimeout(700);
+await pg.getByRole('button', { name: 'Start' }).click(); await pg.waitForTimeout(5200); await pg.screenshot({ path: `${OUT}/p5-reading-shin.png` });
+await pg.getByText('Got it').waitFor({ timeout: 12000 }).catch(() => {}); await pg.waitForTimeout(700);
+for (let i = 0; i < 2; i++) { await pg.getByRole('button', { name: 'Start' }).click(); await pg.getByText('Got it').waitFor({ timeout: 12000 }); await pg.waitForTimeout(700); }
+await pg.getByRole('heading', { name: /hurt/ }).waitFor(); await pg.locator('.pbtn').nth(6).click(); await pg.screenshot({ path: `${OUT}/p6-pain.png` });
+await pg.getByRole('button', { name: 'Finish Session' }).click(); await pg.getByRole('button', { name: 'Done' }).waitFor(); await pg.waitForTimeout(300);
+await pg.screenshot({ path: `${OUT}/p7-result.png`, fullPage: true });
+// red-flag result
+await pg.getByRole('button', { name: 'Done' }).click();
+await pg.locator('details.demo').evaluate((e) => { e.open = true; }); await pg.getByRole('button', { name: 'red-flag day' }).click(); await pg.getByRole('button', { name: '+1 day' }).click();
+await pg.screenshot({ path: `${OUT}/p8-home-demo.png`, fullPage: true });
+const portal = await (await br.newContext({ ignoreHTTPSErrors: true, viewport: { width: 402, height: 882 } })).newPage();
+await portal.goto(B + '/portal/'); await portal.screenshot({ path: `${OUT}/c0-login.png` });
+await portal.getByLabel('Demo PIN').fill('1234'); await portal.getByRole('button', { name: 'Open portal' }).click();
+await portal.getByRole('button', { name: /Ewa/ }).click(); await portal.waitForTimeout(500); await portal.screenshot({ path: `${OUT}/c1-detail-mobile.png`, fullPage: true });
+const wide = await (await br.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 } })).newPage();
+await wide.goto(B + '/portal/'); await wide.getByLabel('Demo PIN').fill('1234'); await wide.getByRole('button', { name: 'Open portal' }).click();
+await wide.getByRole('button', { name: /Ewa/ }).click(); await wide.waitForTimeout(500); await wide.screenshot({ path: `${OUT}/c2-detail-desktop.png` });
+await br.close();

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import QRCode from 'qrcode';
-import { isMilestoneReached, isReference, phaseInfo, rom, stageFor, weekOf, type Alert, type DailySummary, type Protocol } from '@tele/engine';
+import { daysBetween, isMilestoneReached, isReference, phaseInfo, rom, stageFor, weekOf, type Alert, type DailySummary, type Protocol } from '@tele/engine';
 
 interface PatientRow { pseudonym: string; name: string; birthYear?: number; devices: number; last?: { date: string; status: 'on_track' | 'alert'; alerts: Alert[]; milestone: boolean; week: number; stage?: { index: number; total: number } } }
 interface Rec { summary: DailySummary; evaluation: { status: string; alerts: Alert[]; milestoneReached: boolean; week: number; nextStep: string }; crossCheck: 'match' | 'mismatch'; signature: string; kid: string; receivedAt: string; jwsSha256: string }
@@ -39,7 +39,7 @@ export function App() {
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(undefined), 6000); return () => clearTimeout(t); } }, [toast]);
 
   if (!authed) return (
-    <main class="login"><h1>KneeTrack Clinic</h1><p class="muted">Demo access. Synthetic patients only.</p>
+    <main class="login"><SwitchNav /><h1>KneeTrack Clinic</h1><p class="muted">Demo access. Synthetic patients only.</p>
       <form onSubmit={async (e) => { e.preventDefault(); PIN = pin; try { await api('patients'); sessionStorage.setItem('pin', pin); setAuthed(true); } catch { PIN = ''; setBad(true); } }}>
         <label>Demo PIN<input type="password" inputMode="numeric" value={pin} onInput={(e) => setPin((e.target as HTMLInputElement).value)} autofocus /></label>
         <button class="btn primary">Open portal</button>{bad && <p class="error">Wrong PIN.</p>}</form></main>
@@ -48,7 +48,7 @@ export function App() {
   const exceptions = list.filter((p) => p.last?.status === 'alert').length;
   return (
     <div class="app">
-      <header class="top"><b>KneeTrack Clinic</b><span class="muted">Only exceptions need your attention</span>
+      <header class="top"><SwitchNav /><span class="muted hint">Only exceptions need your attention</span>
         <span class="sp" /><AuditBadge audit={audit} /></header>
       {toast && <div class={`toast ${toast.kind}`} role="status">{toast.text}</div>}
       <div class="cols">
@@ -68,6 +68,10 @@ export function App() {
     </div>
   );
 }
+/** Demo navigation between the two views, as in the design. */
+const SwitchNav = () => <nav class="switch" aria-label="View"><a href="/">Patient</a><span class="on" aria-current="page">Clinician</span></nav>;
+const FlagIcon = () => <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#b3261e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 25V4M6 5h15l-3 5.5 3 5.5H6" /></svg>;
+const fmtDate = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const rank = (p: PatientRow) => (p.last?.status === 'alert' ? 0 : p.last?.milestone ? 1 : 2);
 const AuditBadge = ({ audit }: { audit?: Audit }) => audit ? <span class={`chip ${audit.chainValid ? 'green' : 'red'}`} title="Hash-chained audit log">{audit.chainValid ? '✔' : '✘'} audit log {audit.chainValid ? 'intact' : 'BROKEN'} · {audit.total}</span> : null;
 
@@ -76,12 +80,14 @@ function DetailView({ d: full, onChange }: { d: Detail; onChange: () => void }) 
   // Charts and the status banners use the operated leg only; reference readings of the other knee appear in the timeline.
   const d: Detail = { ...full, records: full.records.filter((r) => !isReference(full.protocol, r.summary)) };
   const refs = full.records.filter((r) => isReference(full.protocol, r.summary));
-  const last = d.records.at(-1); const alerts = last?.evaluation.alerts ?? [];
+  const last = d.records.at(-1);
+  const redFlags = last ? d.records.filter((r) => daysBetween(r.summary.date, last.summary.date) <= 6 && r.evaluation.status === 'alert').length : 0;
   return (
     <>
-      <h2>{d.identity?.name ?? d.pseudonym} <small>{d.pseudonym}{d.identity && ` · born ${d.identity.birthYear}`} · operated leg: {d.protocol.operatedLeg ?? 'not set'}{phaseInfo(d.protocol) && ` · ${phaseInfo(d.protocol)!.name} (${phaseInfo(d.protocol)!.index}/${phaseInfo(d.protocol)!.total})`}</small></h2>
-      {last && alerts.length > 0 && alerts.map((a) => (
-        <div class="flagcard" role="alert"><b>{a.severity === 'high' ? 'Red flag' : 'Trend'} · {last.summary.date}</b><p>{a.detail}</p></div>))}
+      <p class="lead">Week {last?.evaluation.week ?? '–'}{phaseInfo(d.protocol) && ` · ${phaseInfo(d.protocol)!.name}`}</p>
+      <h1 class="pname">{d.identity?.name ?? d.pseudonym}</h1>
+      <p class="flagcount">{redFlags > 0 ? <><b class="red">{redFlags} red flag{redFlags > 1 ? 's' : ''}</b> in the last 7 days.</> : 'No red flags in the last 7 days.'}</p>
+      <p class="muted tiny">{d.pseudonym}{d.identity && ` · born ${d.identity.birthYear}`} · operated leg: {d.protocol.operatedLeg ?? 'not set'}</p>
       {last && isMilestoneReached(d.protocol, last.summary) && <MilestoneCard d={d} onAdvanced={onChange} />}
       {last?.crossCheck === 'mismatch' && <div class="flagcard"><b>Rule cross-check mismatch</b><p>The phone's alert set differs from the server's recomputation. The server's result is shown.</p></div>}
       <ReferenceCard last={last} ref0={refs.at(-1)} gap={d.protocol.referenceGapDeg} />
@@ -92,12 +98,21 @@ function DetailView({ d: full, onChange }: { d: Detail; onChange: () => void }) 
         <Chart title="Pain (0–10)" unit="" d={d} pick={(r) => r.summary.pain} limit={d.protocol.painLimit} lo={0} hi={10} />
       </div>
       <h3>Timeline</h3>
-      <div class="tablewrap"><table><thead><tr><th>Date</th><th>Flex</th><th>Ext</th><th>ROM</th><th>Pain</th><th>Status</th><th>Integrity</th></tr></thead><tbody>
-        {[...full.records].reverse().map((r) => (
-          <tr class={r.evaluation.status === 'alert' ? 'bad' : ''}><td title={`${r.summary.leg ?? ''} knee · extension: ${r.summary.extPosture ?? '?'} · flexion: ${r.summary.flexPosture ?? '?'}`}>{r.summary.date}</td><td>{r.summary.flexion}°</td><td>{r.summary.extension}°</td><td><b>{rom(r.summary)}°</b></td><td>{r.summary.pain}</td>
-            <td>{isReference(full.protocol, r.summary) ? 'reference (other knee)' : r.evaluation.status === 'alert' ? r.evaluation.alerts.map((a) => a.kind.replace(/_/g, ' ')).join(', ') : 'on plan'}</td>
-            <td title={`device ${r.kid} · sha256 ${r.jwsSha256.slice(0, 12)}…`}>✔ signed{r.crossCheck === 'mismatch' ? ' · ⚠ cross-check' : ' · ✔ rules match'}</td></tr>))}
-      </tbody></table></div>
+      <ol class="tl">
+        {[...full.records].reverse().map((r) => {
+          const ref = isReference(full.protocol, r.summary); const bad = r.evaluation.status === 'alert' && !ref;
+          return (
+            <li class={bad ? 'bad' : ref ? 'ref' : ''}>
+              <i class="mk" />
+              <div class="dt" title={`${r.summary.leg ?? ''} knee · extension: ${r.summary.extPosture ?? '?'} · flexion: ${r.summary.flexPosture ?? '?'}`}>{fmtDate(r.summary.date)}{ref && <span class="refTag">other knee · reference</span>}</div>
+              <div class="mv">Flexion {r.summary.flexion}° · Pain {r.summary.pain}/10 · ROM {rom(r.summary)}°</div>
+              <div class="meter"><i style={{ width: `${Math.min(100, (r.summary.flexion / 130) * 100)}%` }} /></div>
+              {bad && <div class="flagcard" role="alert"><FlagIcon /><div><b>{r.evaluation.alerts.some((a) => a.severity === 'high') ? 'Red Flag' : 'Trend'}</b>{r.evaluation.alerts.map((a) => <p>{a.detail}</p>)}</div></div>}
+              <div class="int" title={`device ${r.kid} · sha256 ${r.jwsSha256.slice(0, 12)}…`}>✔ signed{r.crossCheck === 'mismatch' ? ' · ⚠ cross-check' : ' · ✔ rules match'}</div>
+            </li>
+          );
+        })}
+      </ol>
       <ProtocolEditor d={full} onSaved={onChange} />
     </>
   );
@@ -151,7 +166,7 @@ function Chart({ title, unit, d, pick, target, tol, limit, lo, hi, below }: { ti
         <path d={recs.map((r, i) => `${i ? 'L' : 'M'}${x(i)},${y(pick(r))}`).join(' ')} class="ln" />
         {recs.map((r, i) => <circle cx={x(i)} cy={y(pick(r))} r="3.5" class={r.evaluation.status === 'alert' ? 'pt bad' : 'pt'}><title>{r.summary.date}: {pick(r)}{unit}</title></circle>)}
       </svg>
-      <small class="muted">{below ? 'Shaded = more than tolerance below the weekly target (alert zone)' : limit !== undefined ? 'Red line = clinician-set pain limit' : 'Shaded = more than tolerance above the weekly target (alert zone)'}</small>
+      <small class="muted">{below ? 'Shaded = more than tolerance below the weekly target (alert zone)' : limit !== undefined ? 'Red line = clinician-set pain limit' : target ? 'Shaded = more than tolerance above the weekly target (alert zone)' : 'Derived: flexion minus extension deficit'}</small>
     </figure>
   );
 }
@@ -163,7 +178,7 @@ function ProtocolEditor({ d, onSaved }: { d: Detail; onSaved: () => void }) {
   const save = async () => { await api(`protocol/${d.pseudonym}`, { method: 'PUT', body: JSON.stringify({ painLimit: pr.painLimit, stages: pr.stages, operatedLeg: pr.operatedLeg }) }); setSaved(true); setTimeout(() => setSaved(false), 2000); onSaved(); };
   const invite = async () => { const { token } = await api<{ token: string }>('enroll-token', { method: 'POST', body: JSON.stringify({ pseudonym: d.pseudonym }) }); const url = `${location.origin}/?enroll=${token}`; setQr({ url, img: await QRCode.toDataURL(url, { margin: 1, width: 220 }) }); };
   return (
-    <details class="proto"><summary>Protocol setup (mock e-referral) and patient invite</summary>
+    <details class="proto"><summary>Edit protocol <span class="muted">(mock e-referral) and invite patient</span></summary>
       <p class="muted tiny">{pr.label}. Targets are examples set by the clinician; the signed protocol is pushed to the phone, which rejects anything not signed by this clinic.</p>
       <div class="grid2">{pr.stages.map((s, i) => (
         <div class="stage"><b>From week {s.fromWeek}</b>
