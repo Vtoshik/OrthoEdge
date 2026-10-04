@@ -39,7 +39,7 @@ export function App() {
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(undefined), 6000); return () => clearTimeout(t); } }, [toast]);
 
   if (!authed) return (
-    <main class="login"><SwitchNav /><h1>KneeTrack Clinic</h1><p class="muted">Demo access. Synthetic patients only.</p>
+    <main class="login"><SwitchNav /><h1>OrthoEdge Clinic</h1><p class="muted">Demo access. Synthetic patients only.</p>
       <form onSubmit={async (e) => { e.preventDefault(); PIN = pin; try { await api('patients'); sessionStorage.setItem('pin', pin); setAuthed(true); } catch { PIN = ''; setBad(true); } }}>
         <label>Demo PIN<input type="password" inputMode="numeric" value={pin} onInput={(e) => setPin((e.target as HTMLInputElement).value)} autofocus /></label>
         <button class="btn primary">Open portal</button>{bad && <p class="error">Wrong PIN.</p>}</form></main>

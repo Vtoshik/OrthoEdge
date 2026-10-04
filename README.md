@@ -1,4 +1,4 @@
-# KneeTrack: edge-native tele-rehabilitation demo (hackathon MVP)
+# OrthoEdge: edge-native tele-rehabilitation demo (hackathon MVP)
 
 A phone turns into a home knee-angle meter. The angle and the rules run **on the phone**; only a **signed daily summary or alert** (FHIR) reaches the clinic, where a doctor portal shows only the patients who deviate from the plan.
 
